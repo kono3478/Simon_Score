@@ -254,17 +254,47 @@
         </div>
     </div>
 
-    <!-- Firebase & Logic Script -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    <!-- Game Script -->
+    <script>
+        // ===== Google Sheets スコア送信URL =====
+        // Google Apps Script でデプロイしたウェブアプリのURLをここに設定してください
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyw_R5IEY03NgCoNoP4MCu_rJx-HEV6YwtRWcGAMHfJ7nMH2WoZmJXoezLkyUoLw0p3/exec';
 
-        // Global Navigation Functions
+        // ===== ハイスコア管理 (localStorage) =====
+        let highScores = { 1: 0, 2: 0, 3: 0 };
+
+        const loadHighScores = () => {
+            try {
+                const saved = localStorage.getItem('simonHighScores');
+                if (saved) highScores = Object.assign({ 1: 0, 2: 0, 3: 0 }, JSON.parse(saved));
+            } catch (e) {}
+            updateHighScoreUI();
+        };
+
+        const updateHighScoreUI = () => {
+            for (let i = 1; i <= 3; i++) {
+                const el = document.getElementById(`hs-${i}`);
+                if (el) el.textContent = `BEST: ${highScores[i] || 0}`;
+            }
+        };
+
+        const saveScore = (mode, score) => {
+            if (score <= 0) return;
+            if (score > (highScores[mode] || 0)) {
+                highScores[mode] = score;
+                try { localStorage.setItem('simonHighScores', JSON.stringify(highScores)); } catch (e) {}
+                updateHighScoreUI();
+            }
+        };
+
+        loadHighScores();
+
+        // ===== ナビゲーション =====
         window.returnToTitle = () => {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             document.getElementById('view-title').classList.add('active');
-            if (typeof board !== 'undefined') board.classList.remove('error');
+            const b = document.getElementById('board');
+            if (b) b.classList.remove('error');
         };
 
         window.transitionToNameEntry = () => {
@@ -276,77 +306,53 @@
             }, 100);
         };
 
-        window.submitScore = () => {
+        // ===== スコア送信 (URLエンコード形式 + no-cors) =====
+        window.submitScore = async () => {
             const nameInput = document.getElementById('player-name');
             const name = nameInput.value.trim();
-            if (!name) return;
-            
-            console.log("Score Submit process for:", name);
-            window.returnToTitle();
-        };
-
-        // Firebase Setup
-        let db, auth, appId, user;
-        let highScores = { 1: 0, 2: 0, 3: 0 };
-
-        try {
-            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-            const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'simon-challenge';
-
-            const initAuth = async () => {
-                try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
-                        await signInAnonymously(auth);
-                    }
-                } catch (e) { console.error("Auth error", e); }
-            };
-
-            onAuthStateChanged(auth, async (u) => {
-                user = u;
-                if (user) {
-                    try {
-                        const scoreDoc = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'highscores'));
-                        if (scoreDoc.exists()) {
-                            const data = scoreDoc.data();
-                            for (let m in data) {
-                                if (Array.isArray(data[m])) {
-                                    highScores[m] = data[m].length > 0 ? Math.max(...data[m]) : 0;
-                                } else {
-                                    highScores[m] = typeof data[m] === 'number' ? data[m] : 0;
-                                }
-                            }
-                            updateHighScoreUI();
-                        }
-                    } catch (e) { console.error("Data fetch error", e); }
-                }
-            });
-
-            initAuth();
-        } catch (e) {
-            console.error("Firebase init failed", e);
-        }
-
-        const updateHighScoreUI = () => {
-            for (let i = 1; i <= 3; i++) {
-                const scoreVal = highScores[i] || 0;
-                const element = document.getElementById(`hs-${i}`);
-                if (element) element.textContent = `BEST: ${scoreVal}`;
+            if (!name) {
+                nameInput.classList.add('error');
+                setTimeout(() => nameInput.classList.remove('error'), 500);
+                return;
             }
-        };
 
-        const saveScore = async (mode, score) => {
-            if (!user || score <= 0 || !db) return;
-            if (score > (highScores[mode] || 0)) {
-                highScores[mode] = score;
-                try {
-                    await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'highscores'), highScores);
-                    updateHighScoreUI();
-                } catch (e) { console.error("Save error", e); }
+            const submitBtn = document.querySelector('#view-name-entry .btn-submit');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span>送信中...</span>';
+
+            // URLSearchParams形式で送信（no-corsで確実に動作）
+            const params = new URLSearchParams();
+            params.append('playerName', name);
+            params.append('mode1', highScores[1] || 0);
+            params.append('mode2', highScores[2] || 0);
+            params.append('mode3', highScores[3] || 0);
+            params.append('submittedAt', new Date().toISOString());
+
+            try {
+                await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: params
+                });
+
+                submitBtn.innerHTML = '<span>✓ 送信完了！</span>';
+                submitBtn.style.backgroundColor = '#16a34a';
+                setTimeout(() => {
+                    window.returnToTitle();
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<span>スコア送信</span>';
+                    submitBtn.style.backgroundColor = '';
+                }, 1500);
+
+            } catch (err) {
+                console.error('送信エラー:', err);
+                submitBtn.innerHTML = '<span>⚠ 送信失敗 (再試行)</span>';
+                submitBtn.style.backgroundColor = '#dc2626';
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<span>スコア送信</span>';
+                    submitBtn.style.backgroundColor = '';
+                }, 2000);
             }
         };
 
