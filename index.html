@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simon Pro - 3 Modes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+
+        :root {
+            --board-size: 80vw;
+            --board-max-size: 380px;
+        }
+
+        body {
+            background-color: #0f0f0f;
+            font-family: 'Orbitron', sans-serif;
+            touch-action: manipulation;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .game-container {
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1rem;
+        }
+
+        /* Views */
+        .view { display: none; width: 100%; max-width: 450px; flex-direction: column; align-items: center; }
+        .view.active { display: flex; }
+
+        /* Simon Board */
+        .simon-board {
+            position: relative;
+            width: var(--board-size);
+            height: var(--board-size);
+            max-width: var(--board-max-size);
+            max-height: var(--board-max-size);
+            border-radius: 50%;
+            background-color: #222;
+            border: 8px solid #333;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 8px;
+            padding: 8px;
+            overflow: hidden;
+            transition: transform 0.3s ease;
+        }
+
+        .pad {
+            cursor: pointer;
+            transition: all 0.15s ease;
+            opacity: 0.3;
+            filter: brightness(0.5);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* Mode 1 specific: All White */
+        .mode-1 .pad { background-color: #ffffff !important; color: #ffffff !important; }
+        
+        .pad.active {
+            opacity: 1 !important;
+            filter: brightness(1.5) !important;
+            box-shadow: 0 0 40px currentColor;
+            z-index: 5;
+            transform: scale(0.98);
+        }
+
+        .pad-green { background-color: #2ecc71; color: #2ecc71; border-radius: 100% 0 0 0; }
+        .pad-red   { background-color: #e74c3c; color: #e74c3c; border-radius: 0 100% 0 0; }
+        .pad-yellow{ background-color: #f1c40f; color: #f1c40f; border-radius: 0 0 0 100%; }
+        .pad-blue  { background-color: #3498db; color: #3498db; border-radius: 0 0 100% 0; }
+
+        .center-console {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 32%;
+            height: 32%;
+            background-color: #111;
+            border-radius: 50%;
+            border: 4px solid #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        /* Button styles */
+        .btn {
+            @apply w-full py-4 rounded-2xl font-bold transition-all active:scale-95 shadow-lg flex flex-col items-center;
+            letter-spacing: 0.1em;
+            border-width: 2px;
+            border-style: solid;
+        }
+
+        .btn-mode3 { @apply bg-emerald-900/40 text-emerald-100 border-emerald-500/50 hover:bg-emerald-800/60 active:bg-emerald-700; }
+        .btn-mode2 { @apply bg-blue-900/40 text-blue-100 border-blue-500/50 hover:bg-blue-800/60 active:bg-blue-700; }
+        .btn-mode1 { @apply bg-rose-900/60 text-rose-100 border-rose-500/50 hover:bg-rose-800/80 active:bg-rose-700; }
+
+        .btn-back { @apply bg-gray-800 text-gray-300 border-gray-600 hover:bg-gray-700 active:bg-gray-600; }
+        .btn-end { @apply bg-gray-900 text-gray-400 border-gray-800 hover:bg-black active:bg-black; }
+        .btn-submit { @apply bg-blue-600 text-white border-blue-400 hover:bg-blue-500 active:bg-blue-700; }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
+        }
+        .error { animation: shake 0.2s ease-in-out 2; border-color: #e74c3c; }
+
+        .best-label {
+            @apply text-[10px] text-yellow-400 mt-1 font-bold tracking-widest;
+        }
+        
+        .sub-desc {
+            @apply text-[9px] opacity-60 font-normal;
+        }
+
+        /* Input styling - 強制的に白背景・黒文字を適用 */
+        .name-input {
+            width: 100%;
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            border: 3px solid #4b5563;
+            border-radius: 0.75rem;
+            padding: 1rem;
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 1.5rem;
+            outline: none;
+            transition: border-color 0.2s;
+            /* Orbitronが読みにくい場合があるため、入力欄は標準的なフォントを優先 */
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+        }
+        .name-input:focus {
+            border-color: #3b82f6;
+        }
+        .name-input::placeholder {
+            color: #9ca3af;
+            font-size: 1rem;
+        }
+
+        /* 縦幅を2倍にしたボタン */
+        .btn-tall {
+            padding-top: 2rem !important;
+            padding-bottom: 2rem !important;
+        }
+
+        /* 1.2倍大きくした「ゲーム終了」ボタン */
+        .btn-end-large {
+            padding-top: 1.25rem !important;
+            padding-bottom: 1.25rem !important;
+            transform: scale(1.2);
+            margin-top: 2rem !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <!-- Title View -->
+        <div id="view-title" class="view active">
+            <h1 class="text-4xl font-bold tracking-[0.4em] mb-2 text-white">SIMON</h1>
+            <p class="text-xs text-gray-500 mb-10 tracking-widest text-center">MEMORY CHALLENGE</p>
+
+            <div class="w-full max-w-xs space-y-4 flex flex-col items-center">
+                <!-- Mode 3 -->
+                <button onclick="preStartGame(3)" class="btn btn-mode3">
+                    <span class="text-sm">MODE 3: NORMAL</span>
+                    <span class="sub-desc">COLOR + SOUND</span>
+                    <div id="hs-3" class="best-label">BEST: 0</div>
+                </button>
+
+                <!-- Mode 2 -->
+                <button onclick="preStartGame(2)" class="btn btn-mode2">
+                    <span class="text-sm">MODE 2: NO SOUND</span>
+                    <span class="sub-desc">COLOR ONLY</span>
+                    <div id="hs-2" class="best-label">BEST: 0</div>
+                </button>
+
+                <!-- Mode 1 -->
+                <button onclick="preStartGame(1)" class="btn btn-mode1">
+                    <span class="text-sm">MODE 1: BLIND</span>
+                    <span class="sub-desc">WHITE ONLY + NO SOUND</span>
+                    <div id="hs-1" class="best-label">BEST: 0</div>
+                </button>
+
+                <!-- Game End Button - 1.2x Enlarged -->
+                <button onclick="transitionToNameEntry()" class="btn btn-end btn-end-large">
+                    <span class="text-sm uppercase tracking-widest">ゲーム終了</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Name Entry View -->
+        <div id="view-name-entry" class="view">
+            <h2 class="text-2xl font-bold tracking-widest mb-2 text-white">NAME ENTRY</h2>
+            <p class="text-[10px] text-gray-500 mb-8 tracking-widest uppercase">Enter alphanumeric only</p>
+
+            <div class="w-full max-w-xs flex flex-col">
+                <input type="text" 
+                       id="player-name" 
+                       class="name-input" 
+                       placeholder="PLAYER NAME" 
+                       maxlength="12" 
+                       spellcheck="false"
+                       autocomplete="off"
+                       oninput="this.value = this.value.replace(/[^A-Za-z0-9]/g, '');">
+                
+                <!-- Score Submit Button - 2x Height -->
+                <button onclick="submitScore()" class="btn btn-submit btn-tall">
+                    <span>スコア送信</span>
+                </button>
+                <!-- Back Button - 2x Height -->
+                <button onclick="returnToTitle()" class="btn btn-back btn-tall mt-4">
+                    <span>戻る</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Game View -->
+        <div id="view-game" class="view">
+            <div class="mb-6 text-center">
+                <div id="mode-label" class="text-[10px] text-red-500 tracking-widest mb-1">MODE 3</div>
+                <div id="status" class="text-sm text-gray-400 uppercase tracking-tighter h-6">Get Ready</div>
+            </div>
+
+            <div class="simon-board" id="board">
+                <div id="pad-3" class="pad pad-green" data-index="3"></div>
+                <div id="pad-0" class="pad pad-red" data-index="0"></div>
+                <div id="pad-2" class="pad pad-yellow" data-index="2"></div>
+                <div id="pad-1" class="pad pad-blue" data-index="1"></div>
+                
+                <div class="center-console">
+                    <span class="text-[8px] text-gray-600 mb-1 uppercase">Level</span>
+                    <div id="score" class="text-xl font-bold text-red-600">00</div>
+                </div>
+            </div>
+
+            <div id="game-controls" class="w-full mt-12 opacity-0 pointer-events-none transition-opacity flex flex-col items-center">
+                <button onclick="returnToTitle()" class="btn btn-back max-w-xs">BACK TO TITLE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase & Logic Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Navigation Functions
+        window.returnToTitle = () => {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-title').classList.add('active');
+            if (typeof board !== 'undefined') board.classList.remove('error');
+        };
+
+        window.transitionToNameEntry = () => {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-name-entry').classList.add('active');
+            setTimeout(() => {
+                const el = document.getElementById('player-name');
+                if (el) el.focus();
+            }, 100);
+        };
+
+        window.submitScore = () => {
+            const nameInput = document.getElementById('player-name');
+            const name = nameInput.value.trim();
+            if (!name) return;
+            
+            console.log("Score Submit process for:", name);
+            window.returnToTitle();
+        };
+
+        // Firebase Setup
+        let db, auth, appId, user;
+        let highScores = { 1: 0, 2: 0, 3: 0 };
+
+        try {
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+            const app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'simon-challenge';
+
+            const initAuth = async () => {
+                try {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                } catch (e) { console.error("Auth error", e); }
+            };
+
+            onAuthStateChanged(auth, async (u) => {
+                user = u;
+                if (user) {
+                    try {
+                        const scoreDoc = await getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'highscores'));
+                        if (scoreDoc.exists()) {
+                            const data = scoreDoc.data();
+                            for (let m in data) {
+                                if (Array.isArray(data[m])) {
+                                    highScores[m] = data[m].length > 0 ? Math.max(...data[m]) : 0;
+                                } else {
+                                    highScores[m] = typeof data[m] === 'number' ? data[m] : 0;
+                                }
+                            }
+                            updateHighScoreUI();
+                        }
+                    } catch (e) { console.error("Data fetch error", e); }
+                }
+            });
+
+            initAuth();
+        } catch (e) {
+            console.error("Firebase init failed", e);
+        }
+
+        const updateHighScoreUI = () => {
+            for (let i = 1; i <= 3; i++) {
+                const scoreVal = highScores[i] || 0;
+                const element = document.getElementById(`hs-${i}`);
+                if (element) element.textContent = `BEST: ${scoreVal}`;
+            }
+        };
+
+        const saveScore = async (mode, score) => {
+            if (!user || score <= 0 || !db) return;
+            if (score > (highScores[mode] || 0)) {
+                highScores[mode] = score;
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'highscores'), highScores);
+                    updateHighScoreUI();
+                } catch (e) { console.error("Save error", e); }
+            }
+        };
+
+        // --- Game Logic ---
+        const FREQUENCIES = { 0: 261.63, 1: 329.63, 2: 392.00, 3: 523.25 };
+        const STATE = {
+            sequence: [],
+            userIndex: 0,
+            isPlaying: false,
+            isUserTurn: false,
+            level: 0,
+            speed: 600,
+            mode: 3
+        };
+
+        let audioCtx = null;
+        const board = document.getElementById('board');
+        const pads = document.querySelectorAll('.pad');
+        const scoreDisplay = document.getElementById('score');
+        const statusMsg = document.getElementById('status');
+
+        const initAudio = () => {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        };
+
+        const playTone = (index, duration = 300) => {
+            if (STATE.mode < 3) return;
+            initAudio();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(FREQUENCIES[index], audioCtx.currentTime);
+            gain.gain.setValueAtTime(0, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration / 1000);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration / 1000);
+        };
+
+        const activatePad = (index) => {
+            const pad = document.getElementById(`pad-${index}`);
+            if (!pad) return;
+            pad.classList.add('active');
+            playTone(index);
+            setTimeout(() => pad.classList.remove('active'), 300);
+        };
+
+        const playSequence = async () => {
+            STATE.isUserTurn = false;
+            STATE.isPlaying = true;
+            statusMsg.textContent = "Listen...";
+            statusMsg.className = "text-sm text-gray-500 uppercase tracking-widest h-6";
+            await new Promise(r => setTimeout(r, 800));
+            for (let i = 0; i < STATE.sequence.length; i++) {
+                activatePad(STATE.sequence[i]);
+                await new Promise(r => setTimeout(r, STATE.speed));
+            }
+            STATE.isUserTurn = true;
+            STATE.isPlaying = false;
+            STATE.userIndex = 0;
+            statusMsg.textContent = "Your Turn!";
+            statusMsg.className = "text-sm text-green-500 uppercase tracking-widest h-6";
+        };
+
+        const nextRound = () => {
+            STATE.level++;
+            scoreDisplay.textContent = STATE.level.toString().padStart(2, '0');
+            let lastPad = STATE.sequence.length > 0 ? STATE.sequence[STATE.sequence.length - 1] : -1;
+            let nextPad;
+            do {
+                nextPad = Math.floor(Math.random() * 4);
+            } while (nextPad === lastPad && STATE.level > 1);
+            STATE.sequence.push(nextPad);
+            if (STATE.level > 5) STATE.speed = 500;
+            if (STATE.level > 10) STATE.speed = 400;
+            if (STATE.level > 15) STATE.speed = 300;
+            playSequence();
+        };
+
+        const gameOver = () => {
+            STATE.isUserTurn = false;
+            STATE.isPlaying = false;
+            statusMsg.textContent = "Game Over";
+            statusMsg.className = "text-sm text-red-600 uppercase tracking-widest h-6";
+            if (audioCtx && STATE.mode === 3) {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(110, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            }
+            board.classList.add('error');
+            document.getElementById('game-controls').classList.remove('opacity-0', 'pointer-events-none');
+            saveScore(STATE.mode, STATE.level - 1);
+        };
+
+        const handlePadClick = (e) => {
+            if (!STATE.isUserTurn || STATE.isPlaying) return;
+            const index = parseInt(e.currentTarget.dataset.index);
+            activatePad(index);
+            if (index === STATE.sequence[STATE.userIndex]) {
+                STATE.userIndex++;
+                if (STATE.userIndex === STATE.sequence.length) {
+                    STATE.isUserTurn = false;
+                    setTimeout(nextRound, 800);
+                }
+            } else {
+                gameOver();
+            }
+        };
+
+        window.preStartGame = (mode) => {
+            STATE.mode = mode;
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById('view-game').classList.add('active');
+            board.className = `simon-board mode-${mode}`;
+            document.getElementById('mode-label').textContent = `MODE ${mode}: ${mode === 1 ? 'BLIND' : mode === 2 ? 'NO SOUND' : 'NORMAL'}`;
+            document.getElementById('game-controls').classList.add('opacity-0', 'pointer-events-none');
+            STATE.sequence = [];
+            STATE.level = 0;
+            STATE.speed = 600;
+            nextRound();
+        };
+
+        pads.forEach(pad => {
+            const tap = (e) => { e.preventDefault(); handlePadClick(e); };
+            pad.addEventListener('mousedown', tap);
+            pad.addEventListener('touchstart', tap, { passive: false });
+        });
+
+    </script>
+</body>
+</html>
